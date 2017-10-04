@@ -1,60 +1,95 @@
 #!/usr/bin/python -tt
 # -*- coding: utf-8 -*-
 
-import os
-#from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
-import SimpleHTTPServer
-import SocketServer
+import os, shutil
+from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 
 PORT = 8080
-URL = "http://192.168.1.20" + ":" + str(PORT)
+URL = "http://192.168.1.20" + ":" + str(PORT) + "/"
 
-class Handler(SimpleHTTPServer.SimpleHTTPRequestHandler):
-#class Handler(BaseHTTPRequestHandler):
+class Handler(BaseHTTPRequestHandler):
+
+    def isDir(self, path):
+        return os.path.isdir(path)
+
+    def isFile(self, path):
+        return os.path.isfile(path)
+
+    def getIndex(self, path):
+        try:
+            list = os.listdir(path)
+        except os.error:
+            print "Error indexing directory."
+            return None
+
+        return list
+
+    def parsePath(self, path):
+        if(path == "/"):
+            return None
+
+        while path.startswith("/"):
+            path = path.strip("/")
+
+        return path
+
+    def parseDirPath(self, path):
+        if not path.endswith("/"):
+            path = path + "/"
+
+        return path
 
     def do_GET(self):
         try:
-            if self.path == '/':
-                self.send_error(403, "You have not permissions to visit: %s" % self.path)
-                return None
+            path = self.parsePath(self.path)
 
-            if os.path.isdir('.' + self.path):
-                if not self.path.endswith('/'):
-                    self.send_response(301)
-                    self.path = self.path + '/'
+            if path == None:
+                self.send_error(403, "forbidden page")
+                return
 
-                try:
-                    print '.' + self.path + 'index.txt'
-                    list = os.listdir('.' + self.path)
-                    file = open('.' + self.path + 'index.txt', 'w')
-                    for x in list:
-                        if x == "index.txt":
-                            continue
-                        file.write(URL + self.path + x + '\n')
-                    file.close
-                except os.error:
-                    self.send_error(404, "No permission to list directory")
-                    return None
+            if self.isDir(path):
+                path = self.parseDirPath(path)
 
-                #self.path = self.path + 'index.txt'
-                self.path = '/prueba/index.txt'
-                print self.path
-                #return BaseHTTPRequestHandler.do_GET(self)
-                return SimpleHTTPServer.SimpleHTTPRequestHandler.do_GET(self)
+                index = self.getIndex(path)
 
-            print self.path
-            #return BaseHTTPRequestHandler.do_GET(self)
-            return SimpleHTTPServer.SimpleHTTPRequestHandler.do_GET(self)
+                # Send code 200 response
+                self.send_response(200)
+
+                # Send header first
+                self.send_header('Content-type','text/plain; charset=utf-8')
+                self.end_headers()
+
+                # Send index to client
+                for elem in index:
+                    self.wfile.write(URL + path + elem + '\n')
+
+                return
+
+            if self.isFile(path):
+                # Send code 200 response
+                self.send_response(200)
+
+                # Send header first
+                self.send_header('Content-type','application/octet-stream')
+                self.end_headers()
+
+                # Send file to client
+                file = open(path, 'rb')
+                shutil.copyfileobj(file, self.wfile)
+                file.close()
+
+                return
+
+            self.send_error(404, "file not found")
+            return
 
         except IOError:
-            print error
-            self.send_error(404,"File Not Found: %s" % self.path)
-            return None
+            self.send_error(404, "file not found")
+            return
 
 def main():
     try:
-        server = SocketServer.TCPServer(('', PORT), Handler)
-        #server = HTTPServer(('', PORT), Handler)
+        server = HTTPServer(('', PORT), Handler)
         print "Serving at port", PORT
         server.serve_forever()
     except KeyboardInterrupt:
